@@ -157,8 +157,8 @@ def train_model_patience(model, expression, sess, num_epochs, step=None, batch=N
             
             if wait >= 12:
                 if not flag_has_exported_rho:
-                    print "scVI ran for " + str(epoch) + "epochs"
-                    print "SAVING RHO"
+                    print("scVI ran for " + str(epoch) + "epochs")
+                    print("SAVING RHO")
                     rho_early, _, _ = eval_scale_params(model, expression_test, sess)
                     flag_has_exported_rho = True
             else: 
@@ -176,13 +176,13 @@ def train_model_patience(model, expression, sess, num_epochs, step=None, batch=N
             training_history["time"].append(format_time(int(now-begin)))
             training_history["epoch"].append(epoch)
             
-            print "epoch:", epoch, "  l_t:", l_t, "  wait:", wait
+            print("epoch:", epoch, "  l_t:", l_t, "  wait:", wait)
 
             
             if np.isnan(l_tr):
                 break
                 
-    print "SAVING RHO"
+    print("SAVING RHO")
     rho_final, _, _ = eval_scale_params(model, expression_test, sess)
     return training_history, rho_early, rho_final
 

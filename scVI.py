@@ -40,6 +40,7 @@ def dense(x,
     
     if keep_prob is not None:
         output = tf.layers.dropout(output, rate=keep_prob, training=phase)
+        #output = tf.keras.layers.Dropout(output, rate=keep_prob, training=phase)
 
     output = slim.fully_connected(output, num_outputs, activation_fn=None, \
                             weights_initializer=tf.truncated_normal_initializer(stddev=STD))
@@ -66,8 +67,8 @@ def gaussian_sample(mean, var, scope=None):
     mean: tf variable indicating the minibatch mean (shape minibatch_size x latent_space_dim)
     var: tf variable indicating the minibatch variance (same shape)
     """
-    with tf.variable_scope(scope, 'gaussian_sample'):
-        sample = tf.random_normal(tf.shape(mean), mean, tf.sqrt(var))
+    with tf.compat.v1.variable_scope(scope, 'gaussian_sample'):
+        sample = tf.random.normal(tf.shape(mean), mean, tf.sqrt(var))
         sample.set_shape(mean.get_shape())
         return sample
 
@@ -86,12 +87,12 @@ def log_zinb_positive(x, mu, theta, pi, eps=1e-8):
     pi: logit of the dropout parameter (real support) (shape: minibatch x genes)
     eps: numerical stability constant
     """
-    case_zero = tf.nn.softplus(- pi + theta * tf.log(theta + eps) - theta * tf.log(theta + mu + eps)) \
+    case_zero = tf.nn.softplus(- pi + theta * tf.math.log(theta + eps) - theta * tf.math.log(theta + mu + eps)) \
                                 - tf.nn.softplus( - pi)
     case_non_zero = - pi - tf.nn.softplus(- pi) \
-                                + theta * tf.log(theta + eps) - theta * tf.log(theta + mu + eps) \
-                                + x * tf.log(mu + eps) - x * tf.log(theta + mu + eps) \
-                                + tf.lgamma(x + theta) - tf.lgamma(theta) - tf.lgamma(x + 1)
+                                + theta * tf.math.log(theta + eps) - theta * tf.math.log(theta + mu + eps) \
+                                + x * tf.math.log(mu + eps) - x * tf.math.log(theta + mu + eps) \
+                                + tf.math.lgamma(x + theta) - tf.math.lgamma(theta) - tf.math.lgamma(x + 1)
     
     mask = tf.cast(tf.less(x, eps), tf.float32)
     res = tf.multiply(mask, case_zero) + tf.multiply(1 - mask, case_non_zero)
@@ -106,9 +107,9 @@ def log_nb_positive(x, mu, theta, eps=1e-8):
     theta: inverse dispersion parameter (has to be positive support) (shape: minibatch x genes)
     eps: numerical stability constant
     """    
-    res = tf.lgamma(x + theta) - tf.lgamma(theta) - tf.lgamma(x + 1) + x * tf.log(mu + eps) \
-                                - x * tf.log(theta + mu + eps) + theta * tf.log(theta + eps) \
-                                - theta * tf.log(theta + mu + eps)
+    res = tf.math.lgamma(x + theta) - tf.math.lgamma(theta) - tf.math.lgamma(x + 1) + x * tf.math.log(mu + eps) \
+                                - x * tf.math.log(theta + mu + eps) + theta * tf.math.log(theta + eps) \
+                                - theta * tf.math.log(theta + mu + eps)
     return tf.reduce_sum(res, axis=-1)
     
 
@@ -134,7 +135,7 @@ def define_scope(function, scope=None, *args, **kwargs):
     A decorator for functions that define TensorFlow operations. The wrapped
     function will only be executed once. Subsequent calls to it will directly
     return the result so that operations are added to the graph only once.
-    The operations added by the function live within a tf.variable_scope(). If
+    The operations added by the function live within a tf.compat.v1.variable_scope(). If
     this decorator is used with arguments, they will be forwarded to the
     variable scope. The scope name defaults to the name of the wrapped
     function.
@@ -148,7 +149,7 @@ def define_scope(function, scope=None, *args, **kwargs):
     @functools.wraps(function)
     def decorator(self):
         if not hasattr(self, attribute):
-            with tf.variable_scope(name, *args, **kwargs):
+            with tf.compat.v1.variable_scope(name, *args, **kwargs):
                 setattr(self, attribute, function(self))
         return getattr(self, attribute)
     return decorator
@@ -162,7 +163,7 @@ def mmd_fourier(x1, x2, bandwidth=2., dim_r=500):
     https://arxiv.org/abs/1511.00830
     """
     d = x1.get_shape().as_list()[1]
-    rW_n = tf.sqrt(2. / bandwidth) * tf.random_normal([d, dim_r]) / np.sqrt(d)
+    rW_n = tf.sqrt(2. / bandwidth) * tf.random.normal([d, dim_r]) / np.sqrt(d)
     rb_u = 2 * np.pi * tf.random_uniform([dim_r])
     rf0 = tf.sqrt(2. / dim_r) * tf.cos(tf.matmul(x1, rW_n) + rb_u)
     rf1 = tf.sqrt(2. / dim_r) * tf.cos(tf.matmul(x2, rW_n) + rb_u)
@@ -215,11 +216,11 @@ def mmd_objective(z, s, sdim):
     mmd = 0
     for j, z_j in enumerate(z_part):
         z0_ = z_j
-        aux_z0 = tf.random_normal([1, z_dim])  # if an S category does not have any samples
+        aux_z0 = tf.random.normal([1, z_dim])  # if an S category does not have any samples
         z0 = tf.concat([z0_, aux_z0], 0)
         if len(z_part) == 2:
             z1_ = z_part[j + 1]
-            aux_z1 = tf.random_normal((1, z_dim))
+            aux_z1 = tf.random.normal((1, z_dim))
             z1 = tf.concat([z1_, aux_z1], axis=0)
             return mmd_method(z0, z1)
         z1 = z
@@ -362,7 +363,7 @@ class scVIModel:
 
         #q(z | x, s)
         if self.log_variational:
-            x = tf.log(1 + self.expression)
+            x = tf.math.log(1 + self.expression)
         else:
             x = self.expression
 
@@ -430,12 +431,12 @@ class scVIModel:
             self.px_r = dense(h, self.n_input, activation=None, \
                     bn=False, keep_prob=None, phase=self.training_phase)
         elif self.dispersion == "gene":
-            self.px_r = tf.Variable(tf.random_normal([self.n_input]), name="r")
+            self.px_r = tf.Variable(tf.random.normal([self.n_input]), name="r")
         else:
             if self.batch_ind is None:
                 raise ValueError("batch dispersion with no batch info")
             else:
-                self.px_r = tf.Variable(tf.random_normal([self.num_batches, self.n_input]), name="r")
+                self.px_r = tf.Variable(tf.random.normal([self.num_batches, self.n_input]), name="r")
 
             
         #mean poisson
@@ -475,11 +476,11 @@ class scVIModel:
             recon = log_nb_positive(self.expression, self.px_rate, local_dispersion)
         
         kl_gauss_z = 0.5 * tf.reduce_sum(\
-                        tf.square(self.qz_m) + self.qz_v - tf.log(1e-8 + self.qz_v) - 1, 1)
+                        tf.square(self.qz_m) + self.qz_v - tf.math.log(1e-8 + self.qz_v) - 1, 1)
         kl_gauss_l = 0.5 * tf.reduce_sum(\
                         tf.square(self.ql_m - local_l_mean) / local_l_var  \
                             + self.ql_v / local_l_var \
-                            + tf.log(1e-8 + local_l_var)  - tf.log(1e-8 + self.ql_v) - 1, 1)
+                            + tf.math.log(1e-8 + local_l_var)  - tf.math.log(1e-8 + self.ql_v) - 1, 1)
         
         self.ELBO_gau = tf.reduce_mean(recon - self.kl_scale * kl_gauss_z - kl_gauss_l)
         
@@ -491,7 +492,7 @@ class scVIModel:
         else:
             self.loss = - self.ELBO_gau
         
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         optimizer = self.optimize_algo
         with tf.control_dependencies(update_ops):
             self.train_step = optimizer.minimize(self.loss)
@@ -499,9 +500,9 @@ class scVIModel:
     @define_scope
     def optimize_test(self):
         # Test time optimizer to compare log-likelihood score of ZINB-WaVE
-        update_ops_test = tf.get_collection(tf.GraphKeys.UPDATE_OPS, "variational")
-        test_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "variational")
-        optimizer_test = tf.train.AdamOptimizer(learning_rate=0.001, epsilon=0.1)
+        update_ops_test = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS, "variational")
+        test_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, "variational")
+        optimizer_test = tf.compat.v1.train.AdamOptimizer(learning_rate=0.001, epsilon=0.1)
         with tf.control_dependencies(update_ops_test):
             self.test_step = optimizer_test.minimize(self.loss, var_list=test_vars)
     
@@ -510,7 +511,7 @@ class scVIModel:
         # more information of zero probabilities
         if self.zi:
             self.zero_prob = tf.nn.softplus(- self.px_dropout + tf.exp(self.px_r) * self.px_r - tf.exp(self.px_r) \
-                             * tf.log(tf.exp(self.px_r) + self.px_rate + 1e-8)) \
+                             * tf.math.log(tf.exp(self.px_r) + self.px_rate + 1e-8)) \
                              - tf.nn.softplus( - self.px_dropout)
             self.dropout_prob = - tf.nn.softplus( - self.px_dropout)
 
@@ -605,7 +606,7 @@ class scVINoLibSizeModel:
 
         #q(z | x, s)
         if self.log_variational:
-            x = tf.log(1 + self.expression)
+            x = tf.math.log(1 + self.expression)
         else:
             x = self.expression
 
@@ -664,12 +665,12 @@ class scVINoLibSizeModel:
             self.px_r = dense(h, self.n_input, activation=None, \
                     bn=False, keep_prob=None, phase=self.training_phase)
         elif self.dispersion == "gene":
-            self.px_r = tf.Variable(tf.random_normal([self.n_input]), name="r")
+            self.px_r = tf.Variable(tf.random.normal([self.n_input]), name="r")
         else:
             if self.batch_ind is None:
                 raise ValueError("batch dispersion with no batch info")
             else:
-                self.px_r = tf.Variable(tf.random_normal([self.num_batches, self.n_input]), name="r")
+                self.px_r = tf.Variable(tf.random.normal([self.num_batches, self.n_input]), name="r")
 
         #dropout
         if self.zi:
@@ -698,7 +699,7 @@ class scVINoLibSizeModel:
             recon = log_nb_positive(self.expression, self.px_rate, local_dispersion)
         
         kl_gauss_z = 0.5 * tf.reduce_sum(\
-                        tf.square(self.qz_m) + self.qz_v - tf.log(1e-8 + self.qz_v) - 1, 1)
+                        tf.square(self.qz_m) + self.qz_v - tf.math.log(1e-8 + self.qz_v) - 1, 1)
 
         
         self.ELBO_gau = tf.reduce_mean(recon - self.kl_scale * kl_gauss_z)
@@ -711,7 +712,7 @@ class scVINoLibSizeModel:
         else:
             self.loss = - self.ELBO_gau
         
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         optimizer = self.optimize_algo
         with tf.control_dependencies(update_ops):
             self.train_step = optimizer.minimize(self.loss)
@@ -719,9 +720,9 @@ class scVINoLibSizeModel:
     @define_scope
     def optimize_test(self):
         # Test time optimizer to compare log-likelihood score of ZINB-WaVE
-        update_ops_test = tf.get_collection(tf.GraphKeys.UPDATE_OPS, "variational")
-        test_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "variational")
-        optimizer_test = tf.train.AdamOptimizer(learning_rate=0.001, epsilon=0.1)
+        update_ops_test = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS, "variational")
+        test_vars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, "variational")
+        optimizer_test = tf.compat.v1.train.AdamOptimizer(learning_rate=0.001, epsilon=0.1)
         with tf.control_dependencies(update_ops_test):
             self.test_step = optimizer_test.minimize(self.loss, var_list=test_vars)
     
@@ -730,7 +731,7 @@ class scVINoLibSizeModel:
         # more information of zero probabilities
         if self.zi:
             self.zero_prob = tf.nn.softplus(- self.px_dropout + tf.exp(self.px_r) * self.px_r - tf.exp(self.px_r) \
-                             * tf.log(tf.exp(self.px_r) + self.px_rate + 1e-8)) \
+                             * tf.math.log(tf.exp(self.px_r) + self.px_rate + 1e-8)) \
                              - tf.nn.softplus( - self.px_dropout)
             self.dropout_prob = - tf.nn.softplus( - self.px_dropout)
 
