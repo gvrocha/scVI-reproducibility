@@ -1,0 +1,95 @@
+---
+title: "Example scVI applied to CORTEX data set"
+author: "Guilherme Rocha"
+date: "2020/02/19"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Reproducing the Tensorflow tutorial
+
+The code below loads Tensorflow, prints its version and runs a small example.
+
+## Loading python modules
+
+```{python load_tf}
+import tensorflow as tf
+print(tf.__version__)
+import matplotlib.pyplot as plt
+import numpy as np
+
+# This is here so we can import modules from another folder
+import sys
+sys.path.insert(1, '/scVI/scVI-reproducibility')
+import scVI
+from benchmarking import *
+from helper import *
+```
+
+## Running the example
+
+```{python run_scVI_CORTEX}
+learning_rate = 0.0004
+epsilon = 0.01
+
+data_path = "/scVI/data/processed/CORTEX/"
+expression_train = np.loadtxt(data_path + "data_train")
+expression_test = np.loadtxt(data_path + "data_test")
+c_train = np.loadtxt(data_path + "label_train")
+c_test = np.loadtxt(data_path + "label_test")
+
+expression_train.shape
+expression_test.shape
+
+tf.reset_default_graph()
+expression = tf.placeholder(tf.float32, (None, expression_train.shape[1]), name='x')
+kl_scalar = tf.placeholder(tf.float32, (), name='kl_scalar')
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, epsilon=epsilon)
+training_phase = tf.placeholder(tf.bool, (), name='training_phase')
+
+
+log_library_size = np.log(np.sum(expression_train, axis=1))
+mean, var = np.mean(log_library_size), np.var(log_library_size)
+model = scVI.scVIModel(expression=expression, kl_scale=kl_scalar, \
+                          optimize_algo=optimizer, phase=training_phase, \
+                           library_size_mean=mean, library_size_var=var)
+
+sess = tf.Session()
+
+sess.run(tf.global_variables_initializer())
+result = train_model(model, (expression_train, expression_test), sess, 250)
+
+fig = plt.figure
+plot_training_info(result)
+plt.show()
+
+dic_full = {expression: expression_train, training_phase:False}
+latent = sess.run(model.z, feed_dict=dic_full)
+cluster_scores(latent, 7, c_train)
+
+res = train_model(model, (expression_test, expression_test), sess, 1000, step=model.test_step)
+eval_likelihood(model, expression_test, sess)
+```
+
+## tSNE plot
+
+```{python tSNE_plot}
+latent_train = eval_latent(model, expression_train, sess)
+fig = plt.figure
+show_tSNE(latent_train, c_train)
+plt.show()
+```
+
+```{python tSNE_plot.test}
+latent_test = eval_latent(model, expression_test, sess)
+fig = plt.figure
+show_tSNE(latent_test, c_test)
+plt.show()
+```
